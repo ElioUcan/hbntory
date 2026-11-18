@@ -6,5 +6,11 @@ dist/
 wheels/
 *.egg-info
 
+#enviroment variables
+.env
+
 # Virtual environments
 .venv
+
+# Other services
+hbntory-products-api/*
