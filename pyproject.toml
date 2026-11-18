@@ -10,7 +10,9 @@ requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.163.2",
     "fastmcp>=4.2.1",
+    "requests>=2.34.2",
     "sqlalchemy>=2.1.9",
+    "toolbox-core>=1.4.0",
 ]
 
 [project.scripts]
