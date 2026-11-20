@@ -17,7 +17,7 @@ CREATE OR REPLACE TABLE branches (
     branch text not null primary key, --branch name
     stock integer not null, --number of stocks
 
-    constraint not_zero check (stock > 0) --stocks can be negative
+    constraint not_zero check (stock < 0) --stocks can be negative
 );
 -- stock cant be negative CHECK
 -- stock changes require positive integer quantities NOT
