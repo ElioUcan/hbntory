@@ -10,9 +10,14 @@ requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.163.2",
     "fastmcp>=4.2.1",
+    "psycopg2>=2.9.13",
+    "pwdlib[argon2]>=0.4.2",
+    "pyjwt>=2.15.1",
+    "python-multipart>=0.0.34",
     "requests>=2.34.2",
     "sqlalchemy>=2.1.9",
     "toolbox-core>=1.4.0",
+    "uvicorn>=0.54.0",
 ]
 
 [project.scripts]
