@@ -112,7 +112,7 @@ erDiagram
     USERS {
         int user_id PK
         varchar username UK
-        text password_hash "Hash seguro (Argon2 / bcrypt)"
+        text password_hash "Hash seguro (PBKDF2-HMAC-SHA256 / Argon2 / bcrypt)"
         int role_id FK
         int branch_id FK "NULL para admin, NOT NULL para common"
         varchar status "active | deleted (Soft-Delete)"
@@ -123,7 +123,7 @@ erDiagram
     STOCK {
         int stock_id PK
         int branch_id FK
-        varchar product_id "ID/SKU externo (External Product API) - UK(branch_id, product_id)"
+        int product_id "ID externo (External Product API) - UK(branch_id, product_id)"
         int quantity "CHECK (quantity >= 0)"
         timestamptz updated_at
     }
@@ -139,8 +139,8 @@ erDiagram
 | :--- | :--- | :--- |
 | `stock` | `UNIQUE (branch_id, product_id)` | Garantiza una única fila de existencias por producto en cada sucursal, evitando duplicados y habilitando operaciones idempotentes y atómicas de suma/resta (`INSERT ... ON CONFLICT` o `UPDATE` por clave compuesta). |
 | `stock` | `CHECK (quantity >= 0)` | Impide existencias negativas directamente a nivel del motor de base de datos, actuando como última línea de defensa ante condiciones de carrera o validaciones incompletas en la capa de aplicación. |
-| `users` | `CHECK` / validación de alcance de sucursal (`role_id` vs `branch_id`) | Todo usuario con rol `common` debe tener exactamente un `branch_id` asignado (`NOT NULL`), mientras que el único usuario `admin` mantiene `branch_id = NULL` porque gestiona usuarios y sucursales pero no opera stock. |
-| `users` | Índice único parcial sobre rol `admin` (y restricción de negocio) | Garantiza unicidad de `admin` (por ejemplo, `CREATE UNIQUE INDEX uq_single_admin ON users (role_id) WHERE role_id = <admin_role_id> AND status = 'active'`), asegurando que solo exista 1 administrador en el sistema. |
+| `users` | Regla de alcance de sucursal (`role_id` vs `branch_id`) en inicialización y capa RBAC | Aplicada en la inicialización y capa de servicio RBAC: todo usuario con rol `common` debe tener exactamente un `branch_id` asignado (`NOT NULL`), mientras que el único usuario `admin` mantiene `branch_id = NULL` porque gestiona usuarios y sucursales pero no opera stock. |
+| `users` | Unicidad de `admin` en inicialización y capa RBAC | Aplicada en la inicialización y capa de servicio RBAC (pudiendo reforzarse en producción con un índice único parcial sobre rol `admin` activo), asegurando que exista un único administrador inicial en el sistema. |
 | `roles`, `branches`, `users` | Claves únicas (`UK`) y `CHECK (status IN ('active', 'deleted'))` | Aseguran unicidad de nombres de rol (`admin`, `common`), nombres de sucursal y `username`, además de restringir los estados válidos para el borrado lógico de usuarios. |
 
 ### 3.3 Justificación del Diseño de la Base de Datos (Por qué de cada decisión)
@@ -148,7 +148,23 @@ erDiagram
 1. **Por qué NO existe una tabla `products` local (Frontera de datos y *Single Source of Truth*):** El catálogo de productos pertenece exclusivamente a la `External Product API` (solo lectura). Persistir únicamente `product_id` como referencia lógica en `stock` cumple la restricción obligatoria de no almacenar metadatos de producto (nombre, descripción, precio, imágenes) en PostgreSQL, evita datos obsoletos (*stale data*) ante cambios del proveedor y mantiene el bajo acoplamiento entre microservicios.
 2. **Por qué se separan `branches` y `stock` (Normalización 3NF y cardinalidad N:M con catálogo externo):** Una sucursal puede tener múltiples operadores asignados y decenas de productos distintos en inventario. Separar `stock` de `branches` evita duplicar datos de sucursal o usuarios por cada producto, habilita actualizaciones concurrentes seguras sobre filas individuales `(branch_id, product_id)` y delega en PostgreSQL la garantía de no negatividad (`quantity >= 0`).
 3. **Por qué `users` referencia directamente a `branches` (`branch_id` N:1) y a `roles` (RBAC estricto):** Las reglas del dominio exigen que un usuario común solo pueda estar asignado a **1 sucursal** y solo opere el stock de dicha sucursal, mientras que el administrador gestiona usuarios y asignaciones sin tocar inventario. Modelar `branch_id` como clave foránea directa en `users` (nullable solo para `admin`) impone estructuralmente la relación 1-sucursal-por-operador y simplifica la autorización RBAC en cada endpoint de FastAPI.
-4. **Por qué se utiliza borrado lógico (`status`) y `password_hash`:** El administrador debe poder dar de baja usuarios (*soft-delete*) y reasignar sucursales sin destruir el registro histórico ni romper referencias; además, almacenar exclusivamente `password_hash` con algoritmos adaptativos (Argon2id / bcrypt) protege las credenciales frente a accesos no autorizados a la base de datos.
+4. **Por qué se utiliza borrado lógico (`status`) y `password_hash`:** El administrador debe poder dar de baja usuarios (*soft-delete*) y reasignar sucursales sin destruir el registro histórico ni romper referencias; además, almacenar exclusivamente `password_hash` con algoritmos adaptativos (PBKDF2-HMAC-SHA256 / Argon2 / bcrypt) protege las credenciales frente a accesos no autorizados a la base de datos.
+
+### 3.4 Reglas de Validación de Stock e Inicialización Segura
+
+Las cuatro reglas de integridad de inventario se aplican de forma simple en dos capas complementarias:
+
+1. **Capa de base de datos (PostgreSQL / SQLAlchemy):**
+   - `CHECK (quantity >= 0)` (`ck_stock_positive`) impide almacenar existencias negativas en `stock`.
+   - `UNIQUE (branch_id, product_id)` (`uq_branch_product`) asegura una única fila de stock por producto y sucursal.
+   - `FOREIGN KEY (branch_id)` obliga a referenciar una sucursal válida existente en `branches`.
+2. **Capa de aplicación (`update_stock` en `src/hbentory/backoffice/seed.py`):**
+   - Exige que `quantity` sea un entero positivo (`int` distinto de `bool` y `> 0`).
+   - Verifica en sesión que `branch_id` exista en `branches`.
+   - Cuando `check_api=True`, consulta `GET {PRODUCT_API_URL}/api/v1/products/{product_id}` para confirmar que el `product_id` existe en la External Product API (`HTTP 200`).
+   - Rechaza operaciones `remove` que dejarían el stock resultante por debajo de `0`.
+3. **Inicialización segura de contraseñas (`hash_password`):**
+   - El seed genera un salt aleatorio de 16 bytes con `secrets.token_hex(16)` y deriva el hash con `hashlib.pbkdf2_hmac("sha256", ..., 100_000)`, almacenando el formato `salt$digest` sin guardar contraseñas en texto plano.
 
 ---
 
