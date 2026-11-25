@@ -26,17 +26,16 @@ def get_current_active_user(
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail='Could not validate credentials',
-        headers={"WWW-Authenticate": "Bearer"} #no entendi esto
+        headers={"WWW-Authenticate": "Bearer"}
     )
     try:
         payload = decode_access_token(token)
     except jwt.PyJWTError as e:
         raise credentials_exception from e
 
-    #no entendi o mantenerlo KISS
     sub = payload.get('sub') if isinstance(payload, dict) else None
 
-    if sub is None or isinstance(sub, bool) or not isinstance(sub, (str, int)):
+    if sub is None or isinstance(sub, bool):
         raise credentials_exception
 
     try:
@@ -45,10 +44,10 @@ def get_current_active_user(
         raise credentials_exception from e
 
     user = db.scalar(
-	    select(Users)
+              select(Users)
               .options(joinedload(Users.role))
               .where(Users.user_id == user_id)
-	)
+    )
     if user is None or user.status != "active" or user.role is None:
         raise credentials_exception
     return user
