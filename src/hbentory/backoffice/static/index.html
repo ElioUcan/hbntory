@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>HBentory Backoffice</title>
+  <link rel="stylesheet" href="/static/styles.css">
+  <script src="/static/app.js" defer></script>
+</head>
+<body>
+  <header>
+    <strong>HBentory Backoffice</strong>
+    <div id="user-bar" class="hidden">
+      <span id="user-info"></span>
+      <button id="logout-btn" type="button">Salir</button>
+    </div>
+  </header>
+
+  <main>
+    <p id="msg" class="hidden"></p>
+
+    <section id="login-view">
+      <h1>Iniciar sesion</h1>
+      <form id="login-form">
+        <label>Usuario <input id="login-user" type="text" required></label>
+        <label>Contrasena <input id="login-pass" type="password" required></label>
+        <button type="submit">Entrar</button>
+      </form>
+    </section>
+
+    <section id="common-view" class="hidden">
+      <h2 id="branch-title">Sucursal</h2>
+
+      <form id="search-form" class="row">
+        <input id="search-q" type="text" placeholder="Buscar producto (nombre, SKU)...">
+        <button type="submit">Buscar en API</button>
+      </form>
+
+      <label>
+        Producto (API externa)
+        <select id="product-select"></select>
+      </label>
+
+      <div class="row">
+        <button id="check-btn" type="button">Consultar cantidad</button>
+        <span id="stock-result"></span>
+      </div>
+
+      <form id="stock-form" class="row">
+        <label>Cantidad <input id="stock-qty" type="number" min="1" value="1" required></label>
+        <label>
+          Operacion
+          <select id="stock-op">
+            <option value="add">Agregar</option>
+            <option value="remove">Quitar</option>
+          </select>
+        </label>
+        <button type="submit">Aplicar stock</button>
+      </form>
+
+      <h3>Productos en stock</h3>
+      <table>
+        <thead>
+          <tr><th>ID</th><th>SKU</th><th>Nombre</th><th>Cantidad</th></tr>
+        </thead>
+        <tbody id="stock-body"></tbody>
+      </table>
+    </section>
+
+    <section id="admin-view" class="hidden">
+      <h2>Administracion de usuarios</h2>
+
+      <form id="create-user-form" class="row">
+        <input id="new-user" type="text" placeholder="Usuario" maxlength="50" required>
+        <input id="new-pass" type="password" placeholder="Contrasena (min 8)" minlength="8" required>
+        <select id="new-branch" required></select>
+        <button type="submit">Crear usuario comun</button>
+      </form>
+
+      <table>
+        <thead>
+          <tr><th>ID</th><th>Usuario</th><th>Sucursal</th><th>Estado</th><th>Acciones</th></tr>
+        </thead>
+        <tbody id="users-body"></tbody>
+      </table>
+    </section>
+  </main>
+</body>
+</html>
