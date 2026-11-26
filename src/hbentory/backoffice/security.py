@@ -1,8 +1,9 @@
+import os
+from datetime import UTC, datetime, timedelta
+
+import jwt
 from dotenv import load_dotenv
 from pwdlib import PasswordHash
-from datetime import datetime, timedelta, timezone
-import jwt
-import os
 
 load_dotenv()
 jwt_key = os.getenv("JWT_SECRET_KEY")
@@ -22,7 +23,7 @@ def _get_secret_key() -> str:
     return jwt_key
 
 def create_access_token(subject: str | int, expires_delta: timedelta | None = None) -> str:
-    expire = datetime.now(timezone.utc) + (expires_delta or timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES))
+    expire = datetime.now(UTC) + (expires_delta or timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES))
     payload = {'sub': str(subject), 'exp': expire}
 
     return jwt.encode(payload, _get_secret_key(), algorithm=ALGORITHM)

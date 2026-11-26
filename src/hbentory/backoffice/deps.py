@@ -45,7 +45,7 @@ def get_current_active_user(
 
     user = db.scalar(
               select(Users)
-              .options(joinedload(Users.role))
+              .options(joinedload(Users.role), joinedload(Users.branch))
               .where(Users.user_id == user_id)
     )
     if user is None or user.status != "active" or user.role is None:

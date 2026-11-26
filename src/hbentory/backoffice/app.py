@@ -1,7 +1,12 @@
+from pathlib import Path
 from typing import Annotated
+from urllib.parse import quote
 
-from fastapi import Depends, FastAPI, HTTPException, status
+import requests
+from fastapi import Depends, FastAPI, HTTPException, Query, status
+from fastapi.responses import FileResponse
 from fastapi.security import OAuth2PasswordRequestForm
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload
@@ -14,6 +19,8 @@ from hbentory.backoffice.deps import (
     require_common_user,
 )
 from hbentory.backoffice.schemas import (
+    BranchResponse,
+    MeResponse,
     StockResponse,
     StockUpdate,
     Token,
@@ -26,9 +33,37 @@ from hbentory.backoffice.security import (
     hash_password,
     verify_password,
 )
-from hbentory.backoffice.seed import update_stock
+from hbentory.backoffice.seed import PRODUCT_API_URL, update_stock
+
+STATIC_DIR = Path(__file__).resolve().parent / "static"
 
 app = FastAPI(title="HBentory Backoffice")
+app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+
+
+def _fetch_product_api(path: str, params: dict[str, int | str] | None = None) -> dict[str, object]:
+    """Query the external Product API and map upstream errors to HTTP responses."""
+    try:
+        response = requests.get(f"{PRODUCT_API_URL}{path}", params=params, timeout=3)
+    except requests.RequestException as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Product API unavailable",
+        ) from exc
+
+    if response.status_code == status.HTTP_404_NOT_FOUND:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Product not found")
+    if response.status_code >= 500:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Product API unavailable",
+        )
+    if response.status_code != status.HTTP_200_OK:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Unexpected response from Product API",
+        )
+    return response.json()
 
 
 def _get_modifiable_common_user(db: Session, user_id: int, admin_user: Users) -> Users:
@@ -58,6 +93,11 @@ def _commit_user(db: Session, user: Users) -> Users:
     return user
 
 
+@app.get("/", include_in_schema=False)
+def index() -> FileResponse:
+    return FileResponse(STATIC_DIR / "index.html")
+
+
 @app.post("/auth/login", response_model=Token)
 def login(
     form_data: Annotated[OAuth2PasswordRequestForm, Depends()],
@@ -77,10 +117,47 @@ def login(
     return Token(access_token=create_access_token(user.user_id))
 
 
-@app.get("/auth/me", response_model=UserResponse)
-def auth_me(current_user: Annotated[Users, Depends(get_current_active_user)]) -> Users:
-    return current_user
+@app.get("/auth/me", response_model=MeResponse)
+def auth_me(current_user: Annotated[Users, Depends(get_current_active_user)]) -> MeResponse:
+    return MeResponse(
+        **UserResponse.model_validate(current_user).model_dump(),
+        role_name=current_user.role.name,
+        branch=current_user.branch,
+    )
 
+
+@app.get("/products")
+def list_products(
+    current_user: Annotated[Users, Depends(get_current_active_user)],
+    q: str | None = None,
+    limit: Annotated[int, Query(ge=1, le=100)] = 50,
+    offset: Annotated[int, Query(ge=0)] = 0,
+) -> dict[str, object]:
+    params: dict[str, int | str] = {"limit": limit, "offset": offset}
+    if q is not None and q.strip():
+        params["q"] = q.strip()
+    return _fetch_product_api("/api/v1/products", params=params)
+
+
+@app.get("/products/{id_or_sku}")
+def get_product_detail(
+    id_or_sku: str,
+    current_user: Annotated[Users, Depends(get_current_active_user)],
+) -> dict[str, object]:
+    cleaned = id_or_sku.strip()
+    if not cleaned:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Product identifier cannot be empty",
+        )
+    return _fetch_product_api(f"/api/v1/products/{quote(cleaned, safe='')}")
+
+@app.get('/branches', response_model=list[BranchResponse])
+def get_branches(
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[Users, Depends(get_current_active_user)]
+) -> list[Branches]:
+    return list(db.scalars(select(Branches).order_by(Branches.branch_id)).all())
 
 @app.get("/users", response_model=list[UserResponse])
 def list_users(
@@ -174,14 +251,12 @@ def delete_user(
 def list_stock(
     db: Annotated[Session, Depends(get_db)],
     current_user: Annotated[Users, Depends(require_common_user)],
+    in_stock_only: bool = False,
 ) -> list[Stock]:
-    return list(
-        db.scalars(
-            select(Stock)
-            .where(Stock.branch_id == current_user.branch_id)
-            .order_by(Stock.product_id)
-        ).all()
-    )
+    stmt = select(Stock).where(Stock.branch_id == current_user.branch_id)
+    if in_stock_only:
+        stmt = stmt.where(Stock.quantity > 0)
+    return list(db.scalars(stmt.order_by(Stock.product_id)).all())
 
 
 @app.get("/stock/{product_id}", response_model=StockResponse)

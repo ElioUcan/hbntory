@@ -1,5 +1,6 @@
 import os
 import random
+
 import requests
 from dotenv import load_dotenv
 from sqlalchemy import Engine, create_engine, select
@@ -13,7 +14,6 @@ from hbentory.backoffice.db import (
     Users,
 )
 from hbentory.backoffice.security import hash_password
-
 
 load_dotenv()
 

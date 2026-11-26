@@ -1,6 +1,8 @@
-from pydantic import BaseModel, ConfigDict, Field
-from typing import Literal
+
 from datetime import datetime
+from typing import Literal
+
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class Token(BaseModel):
@@ -36,7 +38,6 @@ class UserResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
     model_config = ConfigDict(
-        extra='forbid',
         str_strip_whitespace=True,
         from_attributes=True
     )
@@ -57,6 +58,22 @@ class StockResponse(BaseModel):
     quantity: int = Field(ge=0)
     updated_at: datetime
 
+    model_config = ConfigDict(
+        from_attributes=True
+    )
+
+class BranchResponse(BaseModel):
+    branch_id: int  = Field(gt=0)
+    name: str = Field(min_length=1)
+    location: str = Field(min_length=1)
+    model_config = ConfigDict(
+        from_attributes=True
+    )
+
+
+class MeResponse(UserResponse):
+    role_name: str = Field(min_length=1)
+    branch: BranchResponse | None = None
     model_config = ConfigDict(
         from_attributes=True
     )
