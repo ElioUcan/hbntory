@@ -1,0 +1,60 @@
+sources:
+  my-postgres-db:
+    kind: postgres
+    host: localhost
+    port: 5432
+    database: ${POSTGRES_DB}
+    user: ${POSTGRES_USER}
+    password: ${POSTGRES_PASSWORD}
+
+tools:
+  stock-all-branches:
+    kind: postgres-sql
+    source: my-postgres-db
+    description: |
+      Used when asked about data related to a product stock availability in all branches.
+    statement: |
+      SELECT s.branch_id, s.product_id, b.name, b.location, s.quantity
+      FROM Stock s
+      JOIN Branches b
+      ON b.branch_id = S.branch_id;
+
+  stock-in-branch:
+    kind: postgres-sql
+    source: my-postgres-db
+    description: |
+      Used when asked about data related to a product stock availability in a specific branch.
+    statement: |
+      SELECT s.branch_id, s.product_id, b.name, b.location, s.quantity
+      FROM Stock s
+      JOIN Branches b
+      ON b.branch_id = S.branch_id
+      WHERE b.branch_id = $1;
+    parameters:
+      - name: branch_id
+        type: integer
+        description: Branch_id of the requested branch ($1).
+
+
+  stock-of-product:
+    kind: postgres-sql
+    source: my-postgres-db
+    description: |
+      Used when asked about data related to an specific product.
+    statement: |
+      SELECT s.branch_id, s.product_id, b.name, b.location, s.quantity
+      FROM Stock s
+      JOIN Branches b
+      ON b.branch_id = S.branch_id
+      WHERE s.product_id = $1;
+    parameters:
+      - name: product_id
+        type: integer
+        description: product_id of the requested branch ($1).
+
+
+toolsets:
+  mi-toolset-stock:
+    - stock-all-branches
+    - stock-in-branch
+    - stock-of-product
