@@ -14,3 +14,4 @@ wheels/
 
 # Other services
 hbntory-products-api/*
+src/hbentory/ai_service/.adk/
